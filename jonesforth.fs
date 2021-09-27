@@ -243,12 +243,19 @@
 	( -- )		means the word has no effect on the stack
 )
 
+(
+	First, let's define CELLS.  CELLS is used to calculate the storage required to store n
+	integers of whatever natural size for integers on this machine architecture.  On this
+	FORTH we rely on the C code to set up CELL+ which we can use in our calculations.
+)
+: CELLS ( n -- n ) 0 CELL+ * ;
+
 ( Some more complicated stack examples, showing the stack notation. )
 : NIP ( x y -- y ) SWAP DROP ;
 : TUCK ( x y -- y x y ) SWAP OVER ;
 : PICK ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
 	1+		( add one because of 'u' on the stack )
-	4 *		( multiply by the word size )
+	CELLS		( multiply by the word size )
 	DSP@ +		( add to the stack pointer )
 	@    		( and fetch )
 ;
@@ -326,7 +333,7 @@
 	WHILE
 		DUP @ U.	( print the stack element )
 		SPACE
-		4+		( move up )
+		CELL+		( move up )
 	REPEAT
 	DROP
 ;
@@ -417,14 +424,17 @@
 ( DEPTH returns the depth of the stack. )
 : DEPTH		( -- n )
 	S0 @ DSP@ -
-	4-			( adjust because S0 was on the stack when we pushed DSP )
+	CELL-			( adjust because S0 was on the stack when we pushed DSP )
 ;
 
 (
 	ALIGNED takes an address and rounds it up (aligns it) to the next 4 byte boundary.
 )
 : ALIGNED	( addr -- addr )
-	3 + 3 INVERT AND	( (addr+3) & ~3 )
+	1 CELLS 1-	( mask addr )
+	DUP INVERT	( ~mask mask addr )
+	-ROT		( mask addr ~mask )
+	+ AND           ( ~mask&(addr+mask) )
 ;
 
 (
@@ -472,7 +482,7 @@
 		DROP		( drop the double quote character at the end )
 		DUP		( get the saved address of the length word )
 		HERE @ SWAP -	( calculate the length )
-		4-		( subtract 4 (because we measured from the start of the length word) )
+		CELL-		( subtract 4 (because we measured from the start of the length word) )
 		SWAP !		( and back-fill the length location )
 		ALIGN		( round up to next multiple of 4 bytes for the remaining code )
 	ELSE		( immediate mode )
@@ -620,13 +630,11 @@
 ;
 
 (
-	Second, CELLS.  In FORTH the phrase 'n CELLS ALLOT' means allocate n integers of whatever size
-	is the natural size for integers on this machine architecture.  On this 32 bit machine therefore
-	CELLS just multiplies the top of stack by 4.
-)
-: CELLS ( n -- n ) 4 * ;
+	Second, we'll need CELLS.  In FORTH the phrase 'n CELLS ALLOT' means allocate n integers
+	of whatever size is the natural size for integers on this machine architecture.  We have
+	already defined CELLS but it is interesting to see how the words interact during
+	allocation.
 
-(
 	So now we can define VARIABLE easily in much the same way as CONSTANT above.  Refer to the
 	diagram above to see what the word that this creates will look like.
 )
@@ -702,7 +710,7 @@
 	WORD		( get the name of the value )
 	FIND		( look it up in the dictionary )
 	>DFA		( get a pointer to the first data field (the 'LIT') )
-	4+		( increment to point at the value )
+	CELL+		( increment to point at the value )
 	STATE @ IF	( compiling? )
 		' LIT ,		( compile LIT )
 		,		( compile the address of the value )
@@ -717,7 +725,7 @@
 	WORD		( get the name of the value )
 	FIND		( look it up in the dictionary )
 	>DFA		( get a pointer to the first data field (the 'LIT') )
-	4+		( increment to point at the value )
+	CELL+		( increment to point at the value )
 	STATE @ IF	( compiling? )
 		' LIT ,		( compile LIT )
 		,		( compile the address of the value )
@@ -1048,33 +1056,33 @@
 
 		CASE
 		' LIT OF		( is it LIT ? )
-			4 + DUP @		( get next word which is the integer constant )
+			1 CELLS + DUP @		( get next word which is the integer constant )
 			.			( and print it )
 		ENDOF
 		' LITSTRING OF		( is it LITSTRING ? )
 			[ CHAR S ] LITERAL EMIT '"' EMIT SPACE ( print S"<space> )
-			4 + DUP @		( get the length word )
-			SWAP 4 + SWAP		( end start+4 length )
+			1 CELLS + DUP @		( get the length word )
+			SWAP 1 CELLS + SWAP		( end start+4 length )
 			2DUP TELL		( print the string )
 			'"' EMIT SPACE		( finish the string with a final quote )
 			+ ALIGNED		( end start+4+len, aligned )
-			4 -			( because we're about to add 4 below )
+			1 CELLS -		( because we're about to add 4 below )
 		ENDOF
 		' 0BRANCH OF		( is it 0BRANCH ? )
 			." 0BRANCH ( "
-			4 + DUP @		( print the offset )
+			1 CELLS + DUP @		( print the offset )
 			.
 			." ) "
 		ENDOF
 		' BRANCH OF		( is it BRANCH ? )
 			." BRANCH ( "
-			4 + DUP @		( print the offset )
+			1 CELLS + DUP @		( print the offset )
 			.
 			." ) "
 		ENDOF
 		' ' OF			( is it ' (TICK) ? )
 			[ CHAR ' ] LITERAL EMIT SPACE
-			4 + DUP @		( get the next codeword )
+			1 CELLS + DUP @		( get the next codeword )
 			CFA>			( and force it to be printed as a dictionary entry )
 			ID. SPACE
 		ENDOF
@@ -1083,7 +1091,7 @@
 			  because EXIT is normally implied by ;.  EXIT can also appear in the middle
 			  of words, and then it needs to be printed. )
 			2DUP			( end start end start )
-			4 +			( end start end start+4 )
+			1 CELLS +		( end start end start+4 )
 			<> IF			( end start | we're not at the end )
 				." EXIT "
 			THEN
@@ -1094,7 +1102,7 @@
 			ID. SPACE		( and print it )
 		ENDCASE
 
-		4 +		( end start+4 )
+		1 CELLS +	( end start+4 )
 	REPEAT
 
 	';' EMIT CR
@@ -1282,8 +1290,8 @@
 ;
 
 : CATCH		( xt -- exn? )
-	DSP@ 4+ >R		( save parameter stack pointer (+4 because of xt) on the return stack )
-	' EXCEPTION-MARKER 4+	( push the address of the RDROP inside EXCEPTION-MARKER ... )
+	DSP@ CELL+ >R		( save parameter stack pointer (+4 because of xt) on the return stack )
+	' EXCEPTION-MARKER CELL+ ( push the address of the RDROP inside EXCEPTION-MARKER ... )
 	>R			( ... on to the return stack so it acts like a return address )
 	EXECUTE			( execute the nested function )
 ;
@@ -1292,23 +1300,23 @@
 	?DUP IF			( only act if the exception code <> 0 )
 		RSP@ 			( get return stack pointer )
 		BEGIN
-			DUP R0 4- <		( RSP < R0 )
+			DUP R0 CELL- <		( RSP < R0 )
 		WHILE
 			DUP @			( get the return stack entry )
-			' EXCEPTION-MARKER 4+ = IF	( found the EXCEPTION-MARKER on the return stack )
-				4+			( skip the EXCEPTION-MARKER on the return stack )
+			' EXCEPTION-MARKER CELL+ = IF	( found the EXCEPTION-MARKER on the return stack )
+				CELL+			( skip the EXCEPTION-MARKER on the return stack )
 				RSP!			( restore the return stack pointer )
 
 				( Restore the parameter stack. )
 				DUP DUP DUP		( reserve some working space so the stack for this word
 							  doesn't coincide with the part of the stack being restored )
 				R>			( get the saved parameter stack pointer | n dsp )
-				4-			( reserve space on the stack to store n )
+				CELL-			( reserve space on the stack to store n )
 				SWAP OVER		( dsp n dsp )
 				!			( write n on the stack )
 				DSP! EXIT		( restore the parameter stack pointer, immediately exit )
 			THEN
-			4+
+			CELL+
 		REPEAT
 
 		( No matching catch - print a message and restart the INTERPRETer. )
@@ -1334,13 +1342,13 @@
 : PRINT-STACK-TRACE
 	RSP@				( start at caller of this function )
 	BEGIN
-		DUP R0 4- <		( RSP < R0 )
+		DUP R0 CELL- <		( RSP < R0 )
 	WHILE
 		DUP @			( get the return stack entry )
 		CASE
-		' EXCEPTION-MARKER 4+ OF	( is it the exception stack frame? )
+		' EXCEPTION-MARKER CELL+ OF	( is it the exception stack frame? )
 			." CATCH ( DSP="
-			4+ DUP @ U.		( print saved stack pointer )
+			CELL+ DUP @ U.		( print saved stack pointer )
 			." ) "
 		ENDOF
 						( default case )
@@ -1350,10 +1358,10 @@
 				2DUP			( dea addr dea )
 				ID.			( print word from dictionary entry )
 				[ CHAR + ] LITERAL EMIT
-				SWAP >DFA 4+ - .	( print offset )
+				SWAP >DFA CELL+ - .	( print offset )
 			THEN
 		ENDCASE
-		4+			( move up the stack )
+		CELL+			( move up the stack )
 	REPEAT
 	DROP
 	CR
