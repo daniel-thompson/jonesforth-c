@@ -1530,9 +1530,10 @@
 
 ( BYE exits by calling the Linux exit(2) syscall. )
 : BYE		( -- )
-	0		( return code (0) )
-	SYS_EXIT	( system call number )
-	SYSCALL1
+\	0		( return code (0) )
+\	SYS_EXIT	( system call number )
+\	SYSCALL1
+	PAUSE
 ;
 
 (
@@ -1541,16 +1542,16 @@
 	For our implementation we will use Linux brk(2) system call to find out the end
 	of the data segment and subtract HERE from it.
 )
-: GET-BRK	( -- brkpoint )
-	0 SYS_BRK SYSCALL1	( call brk(0) )
-;
+\: GET-BRK	( -- brkpoint )
+\	0 SYS_BRK SYSCALL1	( call brk(0) )
+\;
 
-: UNUSED	( -- n )
-	GET-BRK		( get end of data segment according to the kernel )
-	HERE @		( get current position in data segment )
-	-
-	4 /		( returns number of cells )
-;
+\: UNUSED	( -- n )
+\	GET-BRK		( get end of data segment according to the kernel )
+\	HERE @		( get current position in data segment )
+\	-
+\	1 CELLS /		( returns number of cells )
+\;
 
 (
 	MORECORE increases the data segment by the specified number of (4 byte) cells.
@@ -1566,13 +1567,13 @@
 	implementation of the data segment so that MORECORE is called automatically if
 	the program needs more memory.
 )
-: BRK		( brkpoint -- )
-	SYS_BRK SYSCALL1
-;
+\: BRK		( brkpoint -- )
+\	SYS_BRK SYSCALL1
+\;
 
-: MORECORE	( cells -- )
-	CELLS GET-BRK + BRK
-;
+\: MORECORE	( cells -- )
+\	CELLS GET-BRK + BRK
+\;
 
 (
 	Standard FORTH provides some simple file access primitives which we model on
@@ -1584,52 +1585,52 @@
 	Notice there is no buffering in this implementation.
 )
 
-: R/O ( -- fam ) O_RDONLY ;
-: R/W ( -- fam ) O_RDWR ;
+\: R/O ( -- fam ) O_RDONLY ;
+\: R/W ( -- fam ) O_RDWR ;
 
-: OPEN-FILE	( addr u fam -- fd 0 (if successful) | c-addr u fam -- fd errno (if there was an error) )
-	-ROT		( fam addr u )
-	CSTRING		( fam cstring )
-	SYS_OPEN SYSCALL2 ( open (filename, flags) )
+\: OPEN-FILE	( addr u fam -- fd 0 (if successful) | c-addr u fam -- fd errno (if there was an error) )
+\	-ROT		( fam addr u )
+\	CSTRING		( fam cstring )
+\	SYS_OPEN SYSCALL2 ( open (filename, flags) )
 	DUP		( fd fd )
-	DUP 0< IF	( errno? )
-		NEGATE		( fd errno )
-	ELSE
-		DROP 0		( fd 0 )
-	THEN
-;
+\	DUP 0< IF	( errno? )
+\		NEGATE		( fd errno )
+\	ELSE
+\		DROP 0		( fd 0 )
+\	THEN
+\;
 
-: CREATE-FILE	( addr u fam -- fd 0 (if successful) | c-addr u fam -- fd errno (if there was an error) )
-	O_CREAT OR
-	O_TRUNC OR
-	-ROT		( fam addr u )
-	CSTRING		( fam cstring )
-	420 -ROT	( 0644 fam cstring )
-	SYS_OPEN SYSCALL3 ( open (filename, flags|O_TRUNC|O_CREAT, 0644) )
-	DUP		( fd fd )
-	DUP 0< IF	( errno? )
-		NEGATE		( fd errno )
-	ELSE
-		DROP 0		( fd 0 )
-	THEN
-;
+\: CREATE-FILE	( addr u fam -- fd 0 (if successful) | c-addr u fam -- fd errno (if there was an error) )
+\	O_CREAT OR
+\	O_TRUNC OR
+\	-ROT		( fam addr u )
+\	CSTRING		( fam cstring )
+\	420 -ROT	( 0644 fam cstring )
+\	SYS_OPEN SYSCALL3 ( open (filename, flags|O_TRUNC|O_CREAT, 0644) )
+\	DUP		( fd fd )
+\	DUP 0< IF	( errno? )
+\		NEGATE		( fd errno )
+\	ELSE
+\		DROP 0		( fd 0 )
+\	THEN
+\;
 
-: CLOSE-FILE	( fd -- 0 (if successful) | fd -- errno (if there was an error) )
-	SYS_CLOSE SYSCALL1
-	NEGATE
-;
+\: CLOSE-FILE	( fd -- 0 (if successful) | fd -- errno (if there was an error) )
+\	SYS_CLOSE SYSCALL1
+\	NEGATE
+\;
 
-: READ-FILE	( addr u fd -- u2 0 (if successful) | addr u fd -- 0 0 (if EOF) | addr u fd -- u2 errno (if error) )
-	>R SWAP R>	( u addr fd )
-	SYS_READ SYSCALL3
-
-	DUP		( u2 u2 )
-	DUP 0< IF	( errno? )
-		NEGATE		( u2 errno )
-	ELSE
-		DROP 0		( u2 0 )
-	THEN
-;
+\: READ-FILE	( addr u fd -- u2 0 (if successful) | addr u fd -- 0 0 (if EOF) | addr u fd -- u2 errno (if error) )
+\	>R SWAP R>	( u addr fd )
+\	SYS_READ SYSCALL3
+\
+\	DUP		( u2 u2 )
+\	DUP 0< IF	( errno? )
+\		NEGATE		( u2 errno )
+\	ELSE
+\		DROP 0		( u2 0 )
+\	THEN
+\;
 
 (
 	PERROR prints a message for an errno, similar to C's perror(3) but we don't have the extensive
@@ -1658,10 +1659,9 @@
 : WELCOME
 	S" TEST-MODE" FIND NOT IF
 		." JONESFORTH VERSION " VERSION . CR
-		UNUSED . ." CELLS REMAINING" CR
 		." OK "
 	THEN
 ;
 
-WELCOME
+\ WELCOME
 HIDE WELCOME
