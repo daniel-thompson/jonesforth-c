@@ -16,3 +16,10 @@ jonesforth : $(OBJS)
 
 clean :
 	$(RM) jonesforth $(OBJS)
+
+check : jonesforth
+	cat jonesforth.fs selftest.fs | ./jonesforth
+
+debug : jonesforth
+	cat jonesforth.fs selftest.fs > debug.fs
+	gdb jonesforth -ex "break go_forth" -ex "run < debug.fs"
