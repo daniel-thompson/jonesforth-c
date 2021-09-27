@@ -736,6 +736,96 @@
 ;
 
 (
+	C STRINGS ----------------------------------------------------------------------
+
+	FORTH strings are represented by a start address and length kept on the stack or in memory.
+
+	Most FORTHs don't handle C strings, but we need them in order to access the process arguments
+	and environment left on the stack by the Linux kernel, and to make some system calls.
+
+	Operation	Input		Output		FORTH word	Notes
+	----------------------------------------------------------------------
+
+	Create FORTH string		addr len	S" ..."
+
+	Create C string			c-addr		Z" ..."
+
+	C -> FORTH	c-addr		addr len	DUP STRLEN
+
+	FORTH -> C	addr len	c-addr		CSTRING		Allocated in a temporary buffer, so
+									should be consumed / copied immediately.
+									FORTH string should not contain NULs.
+
+	For example, DUP STRLEN TELL prints a C string.
+)
+
+(
+	Z" .." is like S" ..." except that the string is terminated by an ASCII NUL character.
+
+	To make it more like a C string, at runtime Z" just leaves the address of the string
+	on the stack (not address & length as with S").  To implement this we need to add the
+	extra NUL to the string and also a DROP instruction afterwards.  Apart from that the
+	implementation just a modified S".
+)
+: Z" IMMEDIATE
+	STATE @ IF	( compiling? )
+		' LITSTRING ,	( compile LITSTRING )
+		HERE @		( save the address of the length word on the stack )
+		0 ,		( dummy length - we don't know what it is yet )
+		BEGIN
+			KEY 		( get next character of the string )
+			DUP '"' <>
+		WHILE
+			HERE @ C!	( store the character in the compiled image )
+			1 HERE +!	( increment HERE pointer by 1 byte )
+		REPEAT
+		0 HERE @ C!	( add the ASCII NUL byte )
+		1 HERE +!
+		DROP		( drop the double quote character at the end )
+		DUP		( get the saved address of the length word )
+		HERE @ SWAP -	( calculate the length )
+		CELL-		( subtract 4 (because we measured from the start of the length word) )
+		SWAP !		( and back-fill the length location )
+		ALIGN		( round up to next multiple of 4 bytes for the remaining code )
+		' DROP ,	( compile DROP (to drop the length) )
+	ELSE		( immediate mode )
+		HERE @		( get the start address of the temporary space )
+		BEGIN
+			KEY
+			DUP '"' <>
+		WHILE
+			OVER C!		( save next character )
+			1+		( increment address )
+		REPEAT
+		DROP		( drop the final " character )
+		0 SWAP C!	( store final ASCII NUL )
+		HERE @		( push the start address )
+	THEN
+;
+
+: STRLEN 	( str -- len )
+	DUP		( save start address )
+	BEGIN
+		DUP C@ 0<>	( zero byte found? )
+	WHILE
+		1+
+	REPEAT
+
+	SWAP -		( calculate the length )
+;
+
+: CSTRING	( addr len -- c-addr )
+	SWAP OVER	( len saddr len )
+	HERE @ SWAP	( len saddr daddr len )
+	CMOVE		( len )
+
+	HERE @ +	( daddr+len )
+	0 SWAP C!	( store terminating NUL char )
+
+	HERE @ 		( push start address )
+;
+
+(
 	PRINTING THE DICTIONARY ----------------------------------------------------------------------
 
 	ID. takes an address of a dictionary entry and prints the word's name.
@@ -743,19 +833,9 @@
 	For example: LATEST @ ID. would print the name of the last word that was defined.
 )
 : ID.
-	4+		( skip over the link pointer )
-	DUP C@		( get the flags/length byte )
-	F_LENMASK AND	( mask out the flags - just want the length )
-
-	BEGIN
-		DUP 0>		( length > 0? )
-	WHILE
-		SWAP 1+		( addr len -- len addr+1 )
-		DUP C@		( len addr -- len addr char | get the next character)
-		EMIT		( len addr char -- len addr | and print it)
-		SWAP 1-		( len addr -- addr len-1    | subtract one from length )
-	REPEAT
-	2DROP		( len addr -- )
+	CELL+		( skip over the link pointer)
+	DUP STRLEN      ( convert C-string to Forth string )
+	TELL
 ;
 
 (
@@ -764,12 +844,12 @@
 	'WORD word FIND ?IMMEDIATE' returns true if 'word' is flagged as immediate.
 )
 : ?HIDDEN
-	4+		( skip over the link pointer )
+	>CFA 1-		( skip over the link pointer and name )
 	C@		( get the flags/length byte )
 	F_HIDDEN AND	( mask the F_HIDDEN flag and return it (as a truth value) )
 ;
 : ?IMMEDIATE
-	4+		( skip over the link pointer )
+	>CFA 1-		( skip over the link pointer and name )
 	C@		( get the flags/length byte )
 	F_IMMED AND	( mask the F_IMMED flag and return it (as a truth value) )
 ;
@@ -979,19 +1059,32 @@
 (
 	DECOMPILER ----------------------------------------------------------------------
 
-	CFA> is the opposite of >CFA.  It takes a codeword and tries to find the matching
-	dictionary definition.  (In truth, it works with any pointer into a word, not just
-	the codeword pointer, and this is needed to do stack traces).
-
-	In this FORTH this is not so easy.  In fact we have to search through the dictionary
-	because we don't have a convenient back-pointer (as is often the case in other versions
-	of FORTH).  Because of this search, CFA> should not be used when performance is critical,
-	so it is only used for debugging tools such as the decompiler and printing stack
-	traces.
-
-	This word returns 0 if it doesn't find a match.
+	CFA> is the opposite of >CFA. This FORTH places the flags to allow this to be optmize.
 )
 : CFA>
+	DUP		( keep the CFA )
+	1- C@		( get the flags/length byte )
+	F_LENMASK AND	( apply the mask )
+	CELLS -		( step CFA backwards by the indicated number of cells )
+	CELL-		( step from name to link )
+;
+
+(
+	DFA> is the opposite of >DFA.  It takes a pointer into the data field area and tries to
+	find the matching dictionary definition.  It works with any pointer into a word, not just
+	the entry point; this is needed to do stack traces.
+
+	We could handle this by scanning backwards until we find DOCOL. However DFA> is most useful
+	for debug tools and we'd like to be robust if handed a bad pointer. Therefore DFA> is
+	implemented as a dictionary search. In other words we assume that a corrupt RSP or return
+	stack is more likely than a corrupt dictionary and act accordingly to ensure robustness.
+	Because of the search, DFA> should not be used when performance is critical. In such cases
+	CFA> should be used instead. In this FORTH DFA> is only used for debugging tools such as the
+	decompiler and printing stack traces.
+
+	This word returns 0 if it doesn't find a match.
+ )
+( : DFA>
 	LATEST @	( start at LATEST dictionary entry )
 	BEGIN
 		?DUP		( while link pointer is not null )
@@ -1006,6 +1099,15 @@
 	DROP		( restore stack )
 	0		( sorry, nothing found )
 ;
+)
+: DFA>
+	BEGIN
+		DUP @ DOCOL <>
+	WHILE
+		CELL-
+	REPEAT
+	CFA>
+	;
 
 (
 	SEE decompiles a FORTH word.
@@ -1353,7 +1455,7 @@
 		ENDOF
 						( default case )
 			DUP
-			CFA>			( look up the codeword to get the dictionary entry )
+			DFA>			( look up the address to get the dictionary entry )
 			?DUP IF			( and print it )
 				2DUP			( dea addr dea )
 				ID.			( print word from dictionary entry )
@@ -1367,95 +1469,7 @@
 	CR
 ;
 
-(
-	C STRINGS ----------------------------------------------------------------------
 
-	FORTH strings are represented by a start address and length kept on the stack or in memory.
-
-	Most FORTHs don't handle C strings, but we need them in order to access the process arguments
-	and environment left on the stack by the Linux kernel, and to make some system calls.
-
-	Operation	Input		Output		FORTH word	Notes
-	----------------------------------------------------------------------
-
-	Create FORTH string		addr len	S" ..."
-
-	Create C string			c-addr		Z" ..."
-
-	C -> FORTH	c-addr		addr len	DUP STRLEN
-
-	FORTH -> C	addr len	c-addr		CSTRING		Allocated in a temporary buffer, so
-									should be consumed / copied immediately.
-									FORTH string should not contain NULs.
-
-	For example, DUP STRLEN TELL prints a C string.
-)
-
-(
-	Z" .." is like S" ..." except that the string is terminated by an ASCII NUL character.
-
-	To make it more like a C string, at runtime Z" just leaves the address of the string
-	on the stack (not address & length as with S").  To implement this we need to add the
-	extra NUL to the string and also a DROP instruction afterwards.  Apart from that the
-	implementation just a modified S".
-)
-: Z" IMMEDIATE
-	STATE @ IF	( compiling? )
-		' LITSTRING ,	( compile LITSTRING )
-		HERE @		( save the address of the length word on the stack )
-		0 ,		( dummy length - we don't know what it is yet )
-		BEGIN
-			KEY 		( get next character of the string )
-			DUP '"' <>
-		WHILE
-			HERE @ C!	( store the character in the compiled image )
-			1 HERE +!	( increment HERE pointer by 1 byte )
-		REPEAT
-		0 HERE @ C!	( add the ASCII NUL byte )
-		1 HERE +!
-		DROP		( drop the double quote character at the end )
-		DUP		( get the saved address of the length word )
-		HERE @ SWAP -	( calculate the length )
-		4-		( subtract 4 (because we measured from the start of the length word) )
-		SWAP !		( and back-fill the length location )
-		ALIGN		( round up to next multiple of 4 bytes for the remaining code )
-		' DROP ,	( compile DROP (to drop the length) )
-	ELSE		( immediate mode )
-		HERE @		( get the start address of the temporary space )
-		BEGIN
-			KEY
-			DUP '"' <>
-		WHILE
-			OVER C!		( save next character )
-			1+		( increment address )
-		REPEAT
-		DROP		( drop the final " character )
-		0 SWAP C!	( store final ASCII NUL )
-		HERE @		( push the start address )
-	THEN
-;
-
-: STRLEN 	( str -- len )
-	DUP		( save start address )
-	BEGIN
-		DUP C@ 0<>	( zero byte found? )
-	WHILE
-		1+
-	REPEAT
-
-	SWAP -		( calculate the length )
-;
-
-: CSTRING	( addr len -- c-addr )
-	SWAP OVER	( len saddr len )
-	HERE @ SWAP	( len saddr daddr len )
-	CMOVE		( len )
-
-	HERE @ +	( daddr+len )
-	0 SWAP C!	( store terminating NUL char )
-
-	HERE @ 		( push start address )
-;
 
 (
 	THE ENVIRONMENT ----------------------------------------------------------------------
