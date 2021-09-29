@@ -45,6 +45,7 @@
 ;
 
 : T{
+	." ."
 	DEPTH
 	R> SWAP >R >R
 ;
@@ -70,13 +71,13 @@
 	THEN
 ;
 
-CR EMIT
+CR CR
 
 : OK ."  ok
 "
 ;
 
-." Test suite self tests ..."
+." Test suite self tests "
 
 ( Check that a nop matches another nop... and that there is no stack leakage )
 DEPTH CELL+
@@ -84,9 +85,10 @@ T{ -> }T
 DEPTH = ASSERT
 
 DEPTH CELL+
-T{ -> }T
 T{ 1002 1001 1000 -> 1002 1001 1000 }T
 DEPTH = ASSERT
+
+T{ DEPTH -> 0 }T
 
 ( Anti-tests:
   We can't run these yet but if we need to check that T{ }T correctly
@@ -100,7 +102,7 @@ DEPTH = ASSERT
 OK
 
 
-." Stack primitive tests ..."
+." Stack primitive tests "
 
 T{ 1 2 3 DROP -> 1 2     }T
 T{ 1 2 3 SWAP -> 1 3 2   }T
@@ -124,14 +126,14 @@ T{ 0 CELL+ DUP 8 = SWAP 8 = OR -> TRUE }T
 
 OK
 
-." Arithmetic tests ..."
+." Arithmetic tests "
 T{ 1 2 + -> 3 }T
 T{ 1 2 - -> -1 }T
 T{ 9 9 * -> 81 }T
 T{ 101 5 /MOD -> 1 20 }T
 OK
 
-." Comparison tests ..."
+." Comparison tests "
 \ These are copied from jonesforth/test_comparison.f
 
 T{  1  0 < -> FALSE }T
@@ -207,7 +209,7 @@ T{ -1 0>= -> FALSE }T
 OK
 
 
-." Logic operations ..."
+." Logic operations "
 T{ 31 15 AND -> 15 }T
 T{ 29 15 AND -> 13 }T
 T{ 31 15 OR  -> 31 }T
@@ -218,7 +220,7 @@ T{ -1 INVERT ->  0 }T
 T{ -2 INVERT ->  1 }T
 OK
 
-." Memory accessors ..."
+." Memory accessors "
 T{ 17 DSP@                   @ -> 17 17    }T
 T{ 20 21 DSP@ CELL+          @ -> 20 21 20 }T
 T{ 17 DSP@ 21 SWAP           ! -> 21       }T
@@ -238,7 +240,7 @@ T{ 6 9 42 DSP@ DUP CELL+ 1 CELLS CMOVE -> 6 42 42 }T
 T{ 6 9 42 0 DSP@ DUP CELL+ SWAP 3 CELLS CMOVE -> 6 6 9 42 }T
 OK
 
-." Built-in variables ..."
+." Built-in variables "
 HERE @ \ Capture HERE before we define VARTEST:AT
 : VARTEST:AT IMMEDIATE @ ;
 
@@ -261,7 +263,7 @@ DROP
 
 OK
 
-." Constant loading ..."
+." Constant loading "
 T{ R0 RSP@ > -> TRUE }T
 T{ VERSION -> 47 }T
 \ DOCOL gives the same value as extracting the codeword from a builtin
@@ -273,7 +275,7 @@ T{ F_HIDDEN DUP 1- AND -> 0 }T
 T{ F_LENMASK 0<> -> TRUE }T
 OK
 
-." Return stack manipulation ..."
+." Return stack manipulation "
 T{ 10 >R R> -> 10 }T
 T{ 10 >R RSP@ @ R> -> 10 10 }T
 T{ 10 >R 100 RSP@ ! R> -> 100 }T
@@ -283,12 +285,12 @@ T{ RSP@ HERE @ CELL+ RSP! 42 >R RSP! HERE @ @ -> 42 }T
 T{ 2 >R 1 >R RDROP R> -> 2 }T
 OK
 
-." Data stack load/store ..."
+." Data stack load/store "
 T{ 1000 1001 DSP@ @ -> 1000 1001 1001 }T
 T{ 1000 1001 DSP@ CELL+ DSP! -> 1000 }T
 OK
 
-." Input handling ..."
+." Input handling "
 T{ KEY A -> 65 }T
 T{ KEY A1000 -> 65 1000 }T
 T{ WORD ABC SWAP DROP -> 3 }T
@@ -305,7 +307,7 @@ T{ S" -2147483648" NUMBER -> -2147483648 0 }T
 T{ S" 10A" NUMBER -> 10 1 }T
 OK
 
-." Dictionary lookups ..."
+." Dictionary lookups "
 T{ S" +" FIND 0<> -> TRUE }T
 T{ S" QUIT" FIND 0<> -> TRUE }T
 T{ S" NONSENSE" FIND -> 0 }T
@@ -314,7 +316,6 @@ T{ S" +"    FIND >CFA @ DOCOL = -> FALSE }T
 T{ S" QUIT" FIND >CFA @ DOCOL = -> TRUE }T
 T{ S" T{"   FIND >CFA @ DOCOL = -> TRUE }T
 T{ S" +" FIND >DFA -> S" +" FIND >CFA CELL+ }T
-OK
 
 (
   There are no tests for the following words. All are necessary for the
@@ -346,13 +347,15 @@ T{ HIDEME -> FALSE }T
 HIDDEN
 T{ HIDEME -> TRUE }T
 
-." Odds and ends ..."
+OK
+
+." Odds and ends "
 T{ CHAR A -> 65 }T
 T{ CHAR 9 CHAR 0 - -> 9 0 - }T
 T{ 9 9 S" *" FIND >CFA EXECUTE -> 81 }T
 OK
 
-." Decompiler tools ..."
+." Decompiler tools "
 T{ S" HIDE" FIND >CFA CFA> -> S" HIDE" FIND  }T
 T{ S" HIDE" FIND >DFA DFA> -> S" HIDE" FIND  }T
 OK
