@@ -309,145 +309,14 @@ struct forth_task {
 struct header *var_LATEST;
 uintptr_t var_LINENO = 0;
 
-struct codefield *to_CFA(struct header *l)
-{
-	char *name = (char *) (l + 1);
-	size_t len = strlen(name) + 1;
-	size_t offset = (len | (sizeof(void*)-1)) + 1;
+static struct codefield *to_CFA(struct header *l);
+static uint8_t *to_flags(struct header *l);
+static struct header *do_FIND(const char *s, size_t n);
+static char do_KEY(void);
+static void do_EMIT(char ch);
+static uintptr_t do_NUMBER(char *cp, uintptr_t len, int base, char **endptr);
+static char *do_WORD(void);
 
-	return (struct codefield *) (name + offset);
-}
-
-struct header *from_CFA(struct codefield *cf)
-{
-	uint8_t *p = (void *) cf;
-
-	p -= F_LEN(p[-1]);
-
-	return ((struct header *) p) - 1;
-}
-
-struct header *from_codeword(void **codeword)
-{
-	struct codefield *cf = containerof(codeword, struct codefield, codeword);
-
-	return from_CFA(cf);
-}
-
-uint8_t *to_flags(struct header *l)
-{
-	uint8_t *cf = (uint8_t *) to_CFA(l);
-	return cf - 1;
-}
-
-struct header *do_FIND(const char *s, size_t n)
-{
-	struct header *node = var_LATEST;
-
-	while (node) {
-		char *name = (char *) (node + 1);
-		if (0 == strncmp(name, s, n) && name[n] == '\0') {
-			uint8_t *flags = to_flags(node);
-			if (!(*flags & F_HIDDEN))
-				return node;
-		}
-		node = node->next;
-	}
-
-	return NULL;
-}
-
-static char do_KEY(void)
-{
-	int ch = getchar();
-	if (ch == EOF)
-		exit(0);
-
-	return ch;
-}
-
-static void do_EMIT(char ch)
-{
-	putchar(ch);
-	fflush(stdout);
-}
-
-static uintptr_t do_NUMBER(char *cp, uintptr_t len, int base, char **endptr)
-{
-	uintptr_t n = 0;
-	int i = 0;
-	bool negative = false;
-
-	for (i=0; i<len; i++) {
-
-		if (i == 0 && (cp[0] == '+' || cp[0] == '-')) {
-			negative = cp[0] == '-';
-			continue;
-		}
-
-		uintptr_t digit;
-		if (cp[i] >= '0' && cp[i] <= '9')
-			digit = cp[i] - '0';
-		else if (cp[i] >= 'A' && cp[i] <= 'Z')
-			digit = 10 + (cp[i] - 'A');
-		else if (cp[i] >= 'a' && cp[i] <= 'z')
-			digit = 10 + (cp[i] - 'a');
-		else
-			digit = 37;
-
-		if (digit > (base-1))
-			break;
-
-		n *= base;
-		n += digit;
-	}
-
-	if (endptr)
-		*endptr = cp + i;
-	if (negative)
-		return -n;
-	return n;
-}
-
-static char *do_WORD(void)
-{
-	static char buf[32];
-	char *p = buf;
-	int ch;
-
-	do {
-		ch = getchar();
-		if (ch == '\n')
-			var_LINENO++;
-	} while (isspace(ch));
-
-	if (ch == EOF)
-		exit(0);
-
-	/* Handle comments */
-	if (ch == '\\') {
-		while (ch != '\n' && ch != EOF)
-			ch = getchar();
-		var_LINENO++;
-		return do_WORD();
-	}
-
-	/* Read the word */
-	*p++ = ch;
-	do {
-		ch = getchar();
-		*p++ = ch;
-	} while (!isspace(ch) && ch != EOF);
-
-	/* Terminate word */
-	*--p = '\0';
-
-	/* Did the word end with a newline? */
-	if (ch == '\n')
-		var_LINENO++;
-
-	return buf;
-}
 
 /*
  * Entry point for this forth system.
@@ -2408,19 +2277,138 @@ start:
 }
 
 /*
-	START OF FORTH CODE ----------------------------------------------------------------------
+	LIBRARY CODE FOR VM ----------------------------------------------------------------------
 
-	We've now reached the stage where the FORTH system is running and self-hosting.  All further
-	words can be written as FORTH itself, including words like IF, THEN, .", etc which in most
-	languages would be considered rather fundamental.
-
-	I used to append this here in the assembly file, but I got sick of fighting against gas's
-	crack-smoking (lack of) multiline string syntax.  So now that is in a separate file called
-	jonesforth.f
-
-	If you don't already have that file, download it from http://annexia.org/forth in order
-	to continue the tutorial.
+	At this point we've just finished the implementation of the  central go_forth() function
+	needed to run the VM. However the VM does need a few helper functions. There have previously
+	been declared by we still have to provide definitions!
 */
+
+static struct codefield *to_CFA(struct header *l)
+{
+	char *name = (char *) (l + 1);
+	size_t len = strlen(name) + 1;
+	size_t offset = (len | (sizeof(void*)-1)) + 1;
+
+	return (struct codefield *) (name + offset);
+}
+
+static uint8_t *to_flags(struct header *l)
+{
+	uint8_t *cf = (uint8_t *) to_CFA(l);
+	return cf - 1;
+}
+
+static struct header *do_FIND(const char *s, size_t n)
+{
+	struct header *node = var_LATEST;
+
+	while (node) {
+		char *name = (char *) (node + 1);
+		if (0 == strncmp(name, s, n) && name[n] == '\0') {
+			uint8_t *flags = to_flags(node);
+			if (!(*flags & F_HIDDEN))
+				return node;
+		}
+		node = node->next;
+	}
+
+	return NULL;
+}
+
+static char do_KEY(void)
+{
+	int ch = getchar();
+	if (ch == EOF)
+		exit(0);
+
+	return ch;
+}
+
+static void do_EMIT(char ch)
+{
+	putchar(ch);
+	fflush(stdout);
+}
+
+static uintptr_t do_NUMBER(char *cp, uintptr_t len, int base, char **endptr)
+{
+	uintptr_t n = 0;
+	int i = 0;
+	bool negative = false;
+
+	for (i=0; i<len; i++) {
+
+		if (i == 0 && (cp[0] == '+' || cp[0] == '-')) {
+			negative = cp[0] == '-';
+			continue;
+		}
+
+		uintptr_t digit;
+		if (cp[i] >= '0' && cp[i] <= '9')
+			digit = cp[i] - '0';
+		else if (cp[i] >= 'A' && cp[i] <= 'Z')
+			digit = 10 + (cp[i] - 'A');
+		else if (cp[i] >= 'a' && cp[i] <= 'z')
+			digit = 10 + (cp[i] - 'a');
+		else
+			digit = 37;
+
+		if (digit > (base-1))
+			break;
+
+		n *= base;
+		n += digit;
+	}
+
+	if (endptr)
+		*endptr = cp + i;
+	if (negative)
+		return -n;
+	return n;
+}
+
+static char *do_WORD(void)
+{
+	static char buf[32];
+	char *p = buf;
+	int ch;
+
+	do {
+		ch = getchar();
+		if (ch == '\n')
+			var_LINENO++;
+	} while (isspace(ch));
+
+	if (ch == EOF)
+		exit(0);
+
+	/* Handle comments */
+	if (ch == '\\') {
+		while (ch != '\n' && ch != EOF)
+			ch = getchar();
+		var_LINENO++;
+		return do_WORD();
+	}
+
+	/* Read the word */
+	*p++ = ch;
+	do {
+		ch = getchar();
+		*p++ = ch;
+	} while (!isspace(ch) && ch != EOF);
+
+	/* Terminate word */
+	*--p = '\0';
+
+	/* Did the word end with a newline? */
+	if (ch == '\n')
+		var_LINENO++;
+
+	return buf;
+}
+
+
 
 void *stalloc(size_t size)
 {
@@ -2443,3 +2431,18 @@ int main(int argc, const char *argv[])
 
 	return 0;
 }
+
+/*
+	START OF FORTH CODE ----------------------------------------------------------------------
+
+	We've now reached the stage where the FORTH system is running and self-hosting.  All further
+	words can be written as FORTH itself, including words like IF, THEN, .", etc which in most
+	languages would be considered rather fundamental.
+
+	I used to append this here in the assembly file, but I got sick of fighting against gas's
+	crack-smoking (lack of) multiline string syntax.  So now that is in a separate file called
+	jonesforth.f
+
+	If you don't already have that file, download it from http://annexia.org/forth in order
+	to continue the tutorial.
+*/
