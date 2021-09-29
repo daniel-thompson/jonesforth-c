@@ -1530,35 +1530,15 @@
 
 ( BYE exits by calling the Linux exit(2) syscall. )
 : BYE		( -- )
-\	0		( return code (0) )
-\	SYS_EXIT	( system call number )
-\	SYSCALL1
-	PAUSE
+	0		( return code (0) )
+	FN-exit
+	CCALL1
 ;
 
 (
-	UNUSED returns the number of cells remaining in the user memory (data segment).
-
-	For our implementation we will use Linux brk(2) system call to find out the end
-	of the data segment and subtract HERE from it.
-)
-\: GET-BRK	( -- brkpoint )
-\	0 SYS_BRK SYSCALL1	( call brk(0) )
-\;
-
-\: UNUSED	( -- n )
-\	GET-BRK		( get end of data segment according to the kernel )
-\	HERE @		( get current position in data segment )
-\	-
-\	1 CELLS /		( returns number of cells )
-\;
-
-(
-	MORECORE increases the data segment by the specified number of (4 byte) cells.
-
-	NB. The number of cells requested should normally be a multiple of 1024.  The
-	reason is that Linux can't extend the data segment by less than a single page
-	(4096 bytes or 1024 cells).
+	MORECORE should increases the data segment by the specified number of cells.
+	In this FORTH, MORECORE simply switches the data section to a new block of
+	memory. Any unused cells are wasted.
 
 	This FORTH doesn't automatically increase the size of the data segment "on demand"
 	(ie. when , (COMMA), ALLOT, CREATE, and so on are used).  Instead the programmer
@@ -1567,13 +1547,21 @@
 	implementation of the data segment so that MORECORE is called automatically if
 	the program needs more memory.
 )
-\: BRK		( brkpoint -- )
-\	SYS_BRK SYSCALL1
-\;
+: MALLOC	( u -- addr )
+	FN-malloc
+	CCALL1
+;
 
-\: MORECORE	( cells -- )
-\	CELLS GET-BRK + BRK
-\;
+: FREE		( addr -- )
+	FN-free
+	CCALL1
+	DROP
+;
+
+: MORECORE	( cells -- )
+	CELLS MALLOC HERE !
+;
+
 
 (
 	Standard FORTH provides some simple file access primitives which we model on
@@ -1585,62 +1573,38 @@
 	Notice there is no buffering in this implementation.
 )
 
-\: R/O ( -- fam ) O_RDONLY ;
-\: R/W ( -- fam ) O_RDWR ;
+: MODE_R Z" r" ;
+: MODE_W Z" w" ;
+: MODE_A Z" a" ;
 
-\: OPEN-FILE	( addr u fam -- fd 0 (if successful) | c-addr u fam -- fd errno (if there was an error) )
-\	-ROT		( fam addr u )
-\	CSTRING		( fam cstring )
-\	SYS_OPEN SYSCALL2 ( open (filename, flags) )
-	DUP		( fd fd )
-\	DUP 0< IF	( errno? )
-\		NEGATE		( fd errno )
-\	ELSE
-\		DROP 0		( fd 0 )
-\	THEN
-\;
+: OPEN-FILE ( addr u cstr -- file (if successful) | addr u cstr -- 0 (if there was an error) )
+	-ROT CSTRING
+	FN-fopen
+	CCALL2
+	;
 
-\: CREATE-FILE	( addr u fam -- fd 0 (if successful) | c-addr u fam -- fd errno (if there was an error) )
-\	O_CREAT OR
-\	O_TRUNC OR
-\	-ROT		( fam addr u )
-\	CSTRING		( fam cstring )
-\	420 -ROT	( 0644 fam cstring )
-\	SYS_OPEN SYSCALL3 ( open (filename, flags|O_TRUNC|O_CREAT, 0644) )
-\	DUP		( fd fd )
-\	DUP 0< IF	( errno? )
-\		NEGATE		( fd errno )
-\	ELSE
-\		DROP 0		( fd 0 )
-\	THEN
-\;
+: CLOSE-FILE	( stream -- FALSE (if successful) | stream -- TRUE (if there was an error) )
+	FN-fclose
+	CCALL1
+	0<>
+;
 
-\: CLOSE-FILE	( fd -- 0 (if successful) | fd -- errno (if there was an error) )
-\	SYS_CLOSE SYSCALL1
-\	NEGATE
-\;
+: READ-FILE	( addr u file - FALSE (if successful) | addr u file -- TRUE (if there was an errro) )
+	-ROT
+	1 -ROT
+	SWAP
+	FN-fread
+	CCALL4
+	0=
+;
 
-\: READ-FILE	( addr u fd -- u2 0 (if successful) | addr u fd -- 0 0 (if EOF) | addr u fd -- u2 errno (if error) )
-\	>R SWAP R>	( u addr fd )
-\	SYS_READ SYSCALL3
-\
-\	DUP		( u2 u2 )
-\	DUP 0< IF	( errno? )
-\		NEGATE		( u2 errno )
-\	ELSE
-\		DROP 0		( u2 0 )
-\	THEN
-\;
-
-(
-	PERROR prints a message for an errno, similar to C's perror(3) but we don't have the extensive
-	list of strerror strings available, so all we can do is print the errno.
-)
-: PERROR	( errno addr u -- )
-	TELL
-	':' EMIT SPACE
-	." ERRNO="
-	. CR
+: WRITE-FILE	( addr u file - FALSE (if successful) | addr u file -- TRUE (if there was an errro) )
+	-ROT
+	1 -ROT
+	SWAP
+	FN-fwrite
+	CCALL4
+	0=
 ;
 
 (
@@ -1663,5 +1627,5 @@
 	THEN
 ;
 
-\ WELCOME
+WELCOME
 HIDE WELCOME

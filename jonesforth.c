@@ -294,6 +294,7 @@ typedef union cell {
 
 	void *p;
 	char *cp;
+	union cell (*fnp)();
 	void ***ip;
 	intptr_t *np;
 	uintptr_t *up;
@@ -2306,6 +2307,74 @@ QNATIVE(PAUSE) /* ( ) exit the VM */
 #undef  LINK
 #define LINK PAUSE
 	return;
+	NEXT();
+
+CONSTANT("FN-fopen", FN_fopen, (uintptr_t) &fopen)
+#undef  LINK
+#define LINK FN_fopen
+
+CONSTANT("FN-fclose", FN_fclose, (uintptr_t) &fclose)
+#undef  LINK
+#define LINK FN_fclose
+
+CONSTANT("FN-fread", FN_fread, (uintptr_t) &fread)
+#undef  LINK
+#define LINK FN_fread
+
+CONSTANT("FN-fwrite", FN_fwrite, (uintptr_t) &fwrite)
+#undef  LINK
+#define LINK FN_fwrite
+
+CONSTANT("FN-exit", FN_exit, (uintptr_t) &exit)
+#undef  LINK
+#define LINK FN_exit
+
+CONSTANT("FN-malloc", FN_malloc, (uintptr_t) &malloc)
+#undef  LINK
+#define LINK FN_malloc
+
+CONSTANT("FN-free", FN_free, (uintptr_t) &free)
+#undef  LINK
+#define LINK FN_free
+
+QNATIVE(CCALL0) /* ( fn-addr -- retval ) */
+#undef  LINK
+#define LINK CCALL0
+	dsp[0] = dsp[0].fnp();
+	NEXT();
+
+QNATIVE(CCALL1) /* ( arg1 fn-addr -- retval ) */
+#undef  LINK
+#define LINK CCALL1
+	dsp[1] = dsp[0].fnp(dsp[1]);
+	(void) POP();
+	NEXT();
+
+QNATIVE(CCALL2) /* ( arg2 arg1 fn-addr -- retval ) */
+#undef  LINK
+#define LINK CCALL2
+	dsp[2] = dsp[0].fnp(dsp[1], dsp[2]);
+	(void) POP();
+	(void) POP();
+	NEXT();
+
+QNATIVE(CCALL3) /* ( arg3 arg2 arg1 addr -- retval ) */
+#undef  LINK
+#define LINK CCALL3
+	dsp[3] = dsp[0].fnp(dsp[1], dsp[2], dsp[3]);
+	(void) POP();
+	(void) POP();
+	(void) POP();
+	NEXT();
+
+QNATIVE(CCALL4) /* ( addr -- retval ) */
+#undef  LINK
+#define LINK CCALL4
+	dsp[4] = dsp[0].fnp(dsp[1], dsp[2], dsp[3], dsp[4]);
+	(void) POP();
+	(void) POP();
+	(void) POP();
+	(void) POP();
 	NEXT();
 
 /*

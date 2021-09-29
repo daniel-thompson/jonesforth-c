@@ -15,10 +15,11 @@ jonesforth : $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
 clean :
-	$(RM) jonesforth $(OBJS)
+	$(RM) jonesforth debug.fs filetest.txt $(OBJS)
 
 check : jonesforth
 	cat jonesforth.fs selftest.fs | ./jonesforth
+	@$(RM) filetest.txt
 
 debug : jonesforth
 	cat jonesforth.fs selftest.fs > debug.fs
