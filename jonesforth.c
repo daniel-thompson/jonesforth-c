@@ -933,7 +933,7 @@ QNATIVE(OVER) /* ( a b -- b a b ) duplicate second element of stack */
 	PUSH(dsp[1]);
 	NEXT();
 
-QNATIVE(ROT) /* ( a b c -- b c a ) "forwards" stack rotation */
+QNATIVE(ROT) /* ( a b c -- b c a ) "forwards" stack rotation (grab the third element of the stack) */
 #undef  LINK
 #define LINK ROT
 	tmp = dsp[0];
@@ -942,7 +942,7 @@ QNATIVE(ROT) /* ( a b c -- b c a ) "forwards" stack rotation */
 	dsp[1] = tmp;
 	NEXT();
 
-NATIVE(NROT, "-ROT") /* ( a b c -- c a b ) "backwards" stack rotation */
+NATIVE(NROT, "-ROT") /* ( a b c -- c a b ) "backwards" stack rotation (banish top-of-stack) */
 #undef  LINK
 #define LINK NROT
 	tmp = dsp[0];
