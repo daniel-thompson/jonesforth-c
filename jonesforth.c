@@ -289,16 +289,13 @@ struct codefield {
 };
 
 typedef union cell {
-	intptr_t n;
-	uintptr_t u;
+	intptr_t n;		// Access the cell as a signed number
+	uintptr_t u;		// Access the cell as an unsigned number
 
-	void *p;
-	char *cp;
-	union cell (*fnp)();
-	void ***ip;
-	intptr_t *np;
-	uintptr_t *up;
-	union cell *xp;
+	void *p;		// Access as a generic pointer (for assignment of any pointer) */
+	char *cp;		// Access the cell as a string (or 8-bit ptr) */
+	union cell (*fnp)();	// Make function calls using the value in the cell */
+	union cell *xp;		// As a pointer to a cell. Use -> to dereference (e.g. tmp.xp->u ) */
 } cell_t;
 
 struct forth_task {
@@ -686,7 +683,7 @@ void go_forth(struct forth_task *ctx)
 */
 
 DOCOL:
-	PUSHRSP((cell_t) { .ip = ip });
+	PUSHRSP((cell_t) { .p = ip });
 #ifdef TRACE
 {
 	struct header *hdr = from_codeword(codeword);
@@ -1187,7 +1184,7 @@ QNATIVE(INVERT) /* ( a -- ~a ) */
 QNATIVE(EXIT)
 #undef  LINK
 #define LINK EXIT
-	ip = POPRSP().ip;
+	ip = POPRSP().p;
 	NEXT();
 
 /*
@@ -1269,14 +1266,14 @@ NATIVE(ADDSTORE, "+!") /* ( u a-addr -- ) */
 #undef  LINK
 #define LINK ADDSTORE
 	tmp = POP();
-	*tmp.up += POP().u;
+	tmp.xp->u += POP().u;
 	NEXT();
 
 NATIVE(SUBSTORE, "-!") /* ( u a-addr -- ) */
 #undef  LINK
 #define LINK SUBSTORE
 	tmp = POP();
-	*tmp.up -= POP().u;
+	tmp.xp->u -= POP().u;
 	NEXT();
 
 /*
